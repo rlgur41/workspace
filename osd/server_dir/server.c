@@ -4,15 +4,17 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #define BUFFER 128
-#define DATA_LEN 20
+#define DATA_LENGTH 20
 
 //=================================================
 //Linked List Init, methods implementation start at 73 ~ 150 Line
 struct Node{
-	char name[20];
-	char code[20];
+	char name[DATA_LENGTH];
+	char code[DATA_LENGTH];
 	struct Node* next;
 };
 
@@ -26,24 +28,32 @@ void addFirst(List*, char*, char*);
 void addLast(List*, char*, char*);
 void add(List*, int, char*, char*);
 void del(List*, int);
-struct Node* search(List*, int);
+struct Node* search(List*, char *);
 void print(List*);
+void send_print(List*, char*);
 //=================================================
 
+//================================================
+//Encrypt & Decrypt
 void encode(char *);
 void decode(char *, int);
+//=================================================
 
 int main(int argc, char* argv[]){
+
 	List *list;
-	int i, str_len = 0;
-	char recv_header[2][DATA_LEN];
+
+	int i = 0, str_len = 0;
+	char recv_header[2][DATA_LENGTH];
 	char message[BUFFER];
 	char *ptr;
 	int server_socket, client_socket;
 	struct sockaddr_in server_addr, client_addr;
 	socklen_t client_addr_size;
-	
-	FILE *fp;
+
+	struct Node *temp;
+
+	FILE *fp, *fp1;
 
 	list = (List*)malloc(sizeof(list));
 	list->head = NULL;
@@ -69,36 +79,108 @@ int main(int argc, char* argv[]){
 	if(client_socket == -1)
 		perror(">> ");
 	
-	while(1){
+	fp = fopen("data.txt", "a");
+	fp1 = fopen("data.txt", "r");
+	
+	if(fp1 != NULL){	
+		while(fgets(message, BUFFER, fp1) != NULL) {
+		
+			strcpy(recv_header[0], message);
+			decode(recv_header[0], 10);
+			recv_header[0][strlen(recv_header[0]) - 1] = '\0';
+			fgets(message, BUFFER, fp1);
+		
 
-		fp = fopen("database.txt", "w");
+			strcpy(recv_header[1], message);
+			decode(recv_header[1], 10);
+			recv_header[1][strlen(recv_header[1]) - 1] = '\0';
+			addLast(list, recv_header[0], recv_header[1]);
+		}
+		puts("previous Data ------------------------ ");
+		print(list);	
+		puts("-------------------------------------");
+	}
+	
+
+	while(1){		
 		i = 0;
-
+		
+		memset(message, 0, sizeof(message));
 		str_len = read(client_socket, message, sizeof(message) - 1);
 
-		if(str_len <= 0)
+		if(str_len <= 0){
 			perror(">> ");
-
-		ptr = strtok(message, "\n");	
-		while(ptr != NULL){
-			puts(ptr);
-			strcpy(recv_header[i], ptr);
-			fprintf(fp, "%s\n", recv_header[i++]);
-			ptr = strtok(NULL, "\n");
+			break;
 		}
-		fclose(fp);
-		addLast(list, recv_header[0], recv_header[1]);
-		puts("------------------Data were added-----------------------\nrecently data list :\n");
-		print(list);
-		
-		puts("-------------------------------------------------------");
+	
+		if(!strcmp(message, "add")){
+			memset(message, 0, sizeof(message));
+			read(client_socket, message, sizeof(message));	
+			ptr = strtok(message, "\n");	
+			while(ptr != NULL){
+				puts(ptr);
+				strcpy(recv_header[i], ptr);
 
-	}
+				encode(recv_header[i]);
+				fprintf(fp, "%s\n", recv_header[i]);
+				decode(recv_header[i++], 10);
+				
+				ptr = strtok(NULL, "\n");
+			}
+			addLast(list, recv_header[0], recv_header[1]);
+			puts("------------------Data were added-----------------------\nrecently data list :\n");
+			print(list);
+		
+			puts("-------------------------------------------------------");
+		}
+		else if(!strcmp(message, "search")){
+
+			memset(message, 0, sizeof(message));
+	
+			read(client_socket, message, sizeof(message));
+			printf("%d", str_len);
+			temp = search(list, message);
+
+			if(temp == NULL)
+				strcpy(message, "Nope");
+			else
+				strcpy(message, temp->name);
+
+			write(client_socket, message, sizeof(message));
+		}
+		else if(!strcmp(message, "print")){
+			memset(message, 0, sizeof(message));
+
+			send_print(list, message);
+								
+			write(client_socket, message, strlen(message)); 	
+		}
+	}	
 
 	close(client_socket);
+	fclose(fp1);
+	fclose(fp);
 	close(server_socket);
 	
 	return 1;
+}
+void encode(char *str){
+	int key = 10; //1010
+	
+	while(*str){
+		*str^=key;
+		str++;
+	}
+	printf("encoded, >> %s\n", str);
+}
+
+void decode(char *str, int key){
+	
+	while(*str){
+		*str^=key;
+		str++;
+	}
+	printf("decode, >> %s\n", str);
 }
 //LinkedList implementation ========================================
 struct Node* create_Node(char *name, char *code){
@@ -161,8 +243,16 @@ void del(List *list, int i){
 	free(temp1);
 }
 
-struct Node* search(List *list, int i){
-	return node(list, i);
+struct Node* search(List *list, char *code){
+	struct Node* temp = list->head;
+
+	while(temp != NULL){
+		if(!strcmp(temp->code, code)){
+			return temp;
+		}
+		temp = temp->next;
+	}
+	return NULL;	 
 }
 
 struct Node* node(List *list, int i){
@@ -172,16 +262,27 @@ struct Node* node(List *list, int i){
 	}
 	return temp;
 }
+void send_print(List *list, char *str){
+	struct Node* temp = list->head;
+	while(temp != NULL){
+		strcat(str, temp->name);
+		strcat(str, "\n");
+		strcat(str, temp->code);
+		strcat(str, "\n");
+
+		temp = temp->next;
+	}
+}
 void print(List *list){
-	int maj;
 	struct Node* temp;
 	temp = list->head;
 	
+	puts("Linked List ----------------");	
 	while(temp != NULL){
 		printf("name : %s\ncode : %s\n", temp->name, temp->code);
-		
 		temp = temp->next;
 	}
+	puts("----------------------------");
 }
 //LinkedList implementation end
 //=====================================================================
