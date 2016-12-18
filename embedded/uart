@@ -1,0 +1,22 @@
+#include <SoftwareSerial.h>
+
+SoftwareSerial mySerial(3, 4);
+
+
+void setup() {
+  // put your setup code here, to run once:
+  mySerial.begin(115200);
+  Serial.begin(115200);
+}
+
+void loop() {
+  char n;
+  // put your main code here, to run repeatedly:
+ // if(mySerial.available()){
+  //  Serial.println(n = mySerial.read());
+   // delay(1000);
+    mySerial.write(97);
+    Serial.write("..\n");
+    delay(1000);
+   // }
+}
